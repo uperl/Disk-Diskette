@@ -16,6 +16,7 @@ pod_spelling_system:
     - fdimg
     - FlashFloppy
     - Gotek
+    - macOS
     - mtools
     - sanitization
     - TOML
