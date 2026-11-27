@@ -42,7 +42,11 @@ precedence over the system configuration file.
 
 =item *
 
-C<LC_ALL=C> and C<TZ=UTC>; FAT timestamps are therefore written as UTC.
+C<LC_ALL=POSIX> and C<TZ=UTC>; FAT timestamps are therefore written as UTC.
+C<POSIX> rather than C<C> is deliberate: on macOS, mtools 4.0.50 with
+C<LC_ALL=C> appends a stray character to names during charset conversion
+(for example C<A.TXT_>) and so writes a long file name entry for every
+entry.  On glibc the two locales are identical.
 
 =item *
 
@@ -146,7 +150,7 @@ sub _environment ($self, %opts) {
     MTOOLS_NO_VFAT           => 1,
     MTOOLS_LOWER_CASE        => 0,
     MTOOLS_NAME_NUMERIC_TAIL => 1,
-    LC_ALL                   => 'C',
+    LC_ALL                   => 'POSIX',
     TZ                       => 'UTC',
   );
   $env{SOURCE_DATE_EPOCH} = $opts{epoch} if defined $opts{epoch};

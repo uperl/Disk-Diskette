@@ -23,31 +23,6 @@ jobs:
         run: |
           brew install mtools dosfstools
 
-      # TEMPORARY: investigate long file name entries written by Homebrew
-      # mtools for plain uppercase 8.3 names.  Remove once resolved.
-      - name: mtools diagnostics
-        continue-on-error: true
-        run: |
-          set -x
-          mformat --version | head -1
-          export MTOOLS_SKIP_CHECK=1 MTOOLS_NO_VFAT=1 MTOOLS_LOWER_CASE=0 TZ=UTC
-          export MTOOLSRC=/dev/null HOME=$(mktemp -d)
-          echo hi > a.txt
-          for loc in C POSIX en_US.UTF-8 unset; do
-            rm -f d.img
-            mformat -C -i d.img -f 1440 ::
-            if [ "$loc" = unset ]; then
-              env -u LC_ALL -u LANG mcopy -i d.img a.txt ::/A.TXT
-              env -u LC_ALL -u LANG mmd -i d.img ::/D1
-            else
-              LC_ALL=$loc mcopy -i d.img a.txt ::/A.TXT
-              LC_ALL=$loc mmd -i d.img ::/D1
-            fi
-            echo "== LC_ALL=$loc"
-            xxd -s $((19*512)) -l 160 d.img
-            LC_ALL=C mdir -i d.img ::
-          done
-
       - name: Set up Perl
         uses: shogo82148/actions-setup-perl@v1
         with:

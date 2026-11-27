@@ -45,7 +45,7 @@ subtest 'subprocess failures (fake programs)' => sub {
   is $env->{MTOOLS_FOO}, undef, 'inherited MTOOLS_ variables removed';
   is $env->{SOURCE_DATE_EPOCH}, undef, 'inherited SOURCE_DATE_EPOCH removed';
   is $env->{LANG}, undef, 'LANG removed';
-  is $env->{LC_ALL}, 'C';
+  is $env->{LC_ALL}, 'POSIX';
   is $env->{TZ}, 'UTC';
   is $env->{MTOOLS_NO_VFAT}, 1;
   is $env->{MTOOLS_SKIP_CHECK}, 1;
