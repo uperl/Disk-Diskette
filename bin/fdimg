@@ -1,0 +1,197 @@
+#!/usr/bin/env perl
+
+use v5.42;
+use warnings;
+use App::fdimg;
+
+# PODNAME: fdimg
+# ABSTRACT: Create and inspect raw DOS FAT12 floppy images
+# VERSION
+
+exit App::fdimg->main(@ARGV);
+
+__END__
+
+=head1 SYNOPSIS
+
+ fdimg create utilities/
+ fdimg create utilities/ release/disk1.img
+ fdimg create --format auto-1200k --force utilities/
+ fdimg create --label UTILITIES --exclude '*.bak' utilities/
+ fdimg create --no-label --no-follow-symlinks utilities/
+ fdimg create --empty --format 360k disk.img
+
+ fdimg info disk.img
+ fdimg ls -r disk.img
+ fdimg extract disk.img unpacked/
+ fdimg validate disk.img
+ fdimg formats
+ fdimg completions bash > ~/.local/share/bash-completion/completions/fdimg
+
+=head1 DESCRIPTION
+
+B<fdimg> creates raw (uncompressed sector dump) DOS FAT12 floppy images
+from a directory of DOS software, suitable for copying to a
+Gotek/FlashFloppy USB stick, using in an emulator, or producing in a
+release pipeline.  It needs no root privileges, mounting or loop devices.
+It is a thin interface to L<Disk::Diskette>.
+
+=head1 REQUIREMENTS
+
+The mtools programs (C<mformat>, C<mcopy>, C<mmd>) must be installed and
+in C<PATH>, for example with C<apt install mtools>, C<dnf install mtools>
+or C<brew install mtools>.  Your own mtools configuration is ignored.
+
+=head1 COMMANDS
+
+=head2 create
+
+ fdimg create [options] SOURCE [IMAGE]
+ fdimg create --empty [options] IMAGE
+
+Copies the SOURCE directory into a new image.  IMAGE defaults to the
+source path with C<.img> appended (C<utilities/> becomes
+C<utilities.img>), and must not be inside the source tree.  On success
+the actual format is reported, for example
+C<Created utilities.img (720K FAT12)>.
+
+Host file and directory names must already be legal DOS 8.3 names; case
+is ignored and names are stored in uppercase.  Nothing is truncated or
+renamed and no long file names are created: an illegal name, or two
+names that are the same ignoring case, is an error.  Entries whose
+names start with C<.> are ignored.
+
+Options:
+
+=over 4
+
+=item --format, -f FORMAT
+
+A fixed format (C<160k>, C<180k>, C<320k>, C<360k>, C<720k>, C<1200k>,
+C<1440k>, C<2880k>) or automatic selector (C<auto-360k>, C<auto-720k>,
+C<auto-1200k>, C<auto-1440k>, C<auto-2880k>).  Automatic selectors pick
+the smallest format in the drive family that fits; the default is
+C<auto-1440k> (720k or 1440k).  See C<fdimg formats>.
+
+=item --label, -l LABEL
+
+Volume label (up to 11 characters; stored in uppercase).  The default is
+the uppercase source directory name.
+
+=item --no-label
+
+Create an unlabeled image.
+
+=item --follow-symlinks, --no-follow-symlinks
+
+Symlinks to regular files are followed by default, and each is copied
+as an independent file under the link's name.  C<--no-follow-symlinks>
+makes every symlink an error.  Note that link targets may be outside the
+source tree.
+
+=item --exclude PATTERN
+
+Exclude paths matching a shell-style glob.  A pattern without C</>
+matches a basename at any depth; one with C</> matches the whole
+source-relative path (a leading C</> anchors to the source root).
+Repeat the option for several patterns; together they replace any
+configured list.  Quote patterns so your shell does not expand them.
+
+=item --config PATH, --no-config
+
+Read configuration from PATH instead of the source's C<.fdimg.toml>, or
+read no configuration.
+
+=item --force
+
+Replace an existing image atomically.  Without it an existing image is
+an error.
+
+=item --empty
+
+Create an empty, formatted image; IMAGE is required and
+source-specific options are rejected.
+
+=back
+
+=head2 info
+
+ fdimg info IMAGE
+
+Format, geometry, filesystem layout, volume label, serial number, raw
+size and free capacity.
+
+=head2 ls
+
+ fdimg ls [--recursive|-r] IMAGE [DIR]
+
+Lists a directory (the root by default) with attributes, size and
+modification time (UTC).
+
+=head2 extract
+
+ fdimg extract IMAGE DEST
+
+Extracts the image into the host directory DEST (created if needed).
+Nothing is ever overwritten: if any file would be, nothing is
+extracted.
+
+=head2 validate
+
+ fdimg validate IMAGE
+
+Checks the geometry, boot sector, FATs and directory structure, and
+reports every problem found.
+
+=head2 formats
+
+ fdimg formats
+
+Lists fixed formats and automatic selectors with their candidates.
+
+=head2 completions
+
+ fdimg completions bash|zsh|fish
+
+Prints a completion script for the given shell.
+
+=head2 help
+
+ fdimg help [COMMAND]
+
+=head1 CONFIGURATION
+
+A C<.fdimg.toml> file in the root of the source directory (and only
+there) supplies defaults.  It is never copied into the image.
+
+ format = "auto-1440k"
+ label = "UTILITIES"
+ follow_symlinks = true
+ exclude = ["README.md", "*.bak"]
+
+Command line options override configuration per setting.
+C<label = ""> requests an unlabeled image.  Unknown keys and invalid
+values are errors.
+
+=head1 ENVIRONMENT
+
+=over 4
+
+=item SOURCE_DATE_EPOCH
+
+When set, enables reproducible mode: file timestamps are clamped to this
+time, directories and the volume label use it, and the volume serial
+number is the low 32 bits of the epoch.
+
+=back
+
+=head1 EXIT STATUS
+
+C<0> on success (including help and version), C<1> if the operation
+failed, C<2> for a command line usage error.
+
+=head1 SEE ALSO
+
+L<Disk::Diskette>
+
+=cut
