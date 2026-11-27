@@ -23,6 +23,7 @@ jobs:
 
     env:
       CIP_TAG: ${{ matrix.cip_tag }}
+      CIP_ENV: FDIMG_REQUIRE_MTOOLS=1
 
     steps:
       - uses: actions/checkout@v7

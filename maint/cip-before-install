@@ -1,0 +1,8 @@
+#!/bin/bash
+
+set -ex
+
+# mtools is an external runtime requirement; dosfstools provides fsck.fat
+# for independent filesystem checks in the test suite.
+cip sudo apt-get update
+cip sudo apt-get install -y mtools dosfstools

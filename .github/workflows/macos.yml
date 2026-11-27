@@ -1,0 +1,39 @@
+name: macos
+
+on:
+  push:
+    branches:
+      - '*'
+    tags-ignore:
+      - '*'
+  pull_request:
+
+jobs:
+  perl:
+
+    runs-on: macos-latest
+
+    env:
+      FDIMG_REQUIRE_MTOOLS: 1
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install mtools
+        run: |
+          brew install mtools dosfstools
+
+      - name: Set up Perl
+        uses: shogo82148/actions-setup-perl@v1
+        with:
+          perl-version: '5.42'
+
+      - name: perl -V
+        run: perl -V
+
+      - name: Install Dependencies
+        run: |
+          cpanm -n Moo Path::Tiny Capture::Tiny Getopt::Long::Descriptive TOML::Tiny Test2::V0
+
+      - name: Run Tests
+        run: prove -lvr t

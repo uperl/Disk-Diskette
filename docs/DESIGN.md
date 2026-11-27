@@ -10,7 +10,7 @@ Images are standalone, uncompressed sector dumps (`.img`), not multiplexed Gotek
 
 Follow [PERLSTYLE.md](PERLSTYLE.md), minted by the Author::Plicease profile for new Perl 5.42 distributions. This project explicitly chooses **Moo version 2 or later** instead of the default Class::Tiny, principally for read-only attributes. Prefer immutable geometry and metadata objects; mutation of image contents is explicit.
 
-Use Perl 5.42, stable language features, `Path::Tiny` for filesystem work, and `Capture::Tiny` for command execution/output capture where appropriate. Use `Getopt::Long::Descriptive` (GLD) for CLI parsing with a lightweight internal subcommand dispatcher. This is a project-specific choice, not a general Perl style rule. Do not introduce App::Cmd or MooX::Options. Select a TOML 1.0 parser during implementation according to PERLSTYLE.md; keep its API private. Do not introduce unrelated dependencies merely because the style guide recommends them.
+Use Perl 5.42, stable language features, `Path::Tiny` for filesystem work, and `Capture::Tiny` for command execution/output capture where appropriate. Use `Getopt::Long::Descriptive` (GLD) for CLI parsing with a lightweight internal subcommand dispatcher. This is a project-specific choice, not a general Perl style rule. Do not introduce App::Cmd or MooX::Options. The TOML 1.0 parser is `TOML::Tiny` (pure Perl, publicly maintained); its API stays private to `Disk::Diskette::Config`, which uses its typed-inflation hooks so that strings, booleans, integers, floats and datetimes can be distinguished for schema validation. Do not introduce unrelated dependencies merely because the style guide recommends them.
 
 Use Dist::Zilla with `@Author::Plicease`. Declare runtime and test prerequisites separately, including Moo >= 2, and the Perl baseline. The mtools executables are external runtime requirements; explain installation in the user documentation. `fsck.fat`, emulators and physical hardware are optional independent test tools.
 
@@ -43,9 +43,15 @@ Proposed module layout (internal boundaries may evolve):
 | `Disk::Diskette::Config` | TOML loading, schema validation and precedence |
 | `Disk::Diskette::Manifest` | Source traversal, normalization, exclusions and capacity planning |
 | `Disk::Diskette::Backend::Mtools` | External FAT operations and backend diagnostics |
+| `Disk::Diskette::Entry` | Immutable directory entry metadata returned by image methods |
+| `Disk::Diskette::Error` | Exception class for expected failures (message plus detail lines) |
+| `Disk::Diskette::Name` (internal) | DOS 8.3 short name and volume label rules |
+| `Disk::Diskette::FAT12` (internal) | Read-only native FAT12 parser and structural checker |
 | `App::fdimg` | CLI registry, parsing, dispatch, help and completions |
 
-Keep backend details private and avoid implementing a second backend until needed. Use mformat, mcopy, mdir, minfo, mmd, mdel, mrd, mlabel and mattrib as applicable. Centralize executable discovery and subprocess handling. Invoke commands with argument lists, never shell interpolation. Isolate mtools configuration/environment as needed so user configuration does not change image semantics. Handle spawn failure, signal termination, nonzero exit and unexpected results distinctly. Do not depend on localized output for machine interpretation; use a controlled locale and documented machine-friendly output or read the image metadata directly where necessary.
+All writes go through mtools. Reading (inspection, verification after creation, `validate` and extraction) is done by the internal `Disk::Diskette::FAT12` parser, so no machine interpretation depends on mtools' human-readable output. Images are at most 2.88 MB and are read into memory.
+
+Keep backend details private and avoid implementing a second backend until needed. Use mformat, mcopy, mdir, minfo, mmd, mdel, mrd, mlabel and mattrib as applicable. Centralize executable discovery and subprocess handling. Invoke commands with argument lists, never shell interpolation. Isolate mtools configuration/environment so user configuration does not change image semantics: subprocesses get a private empty `HOME` and `MTOOLSRC`, inherited `MTOOLS_*`, `LANG`/`LC_*` and `SOURCE_DATE_EPOCH` are removed, and `MTOOLS_SKIP_CHECK=1`, `MTOOLS_NO_VFAT=1`, `MTOOLS_LOWER_CASE=0`, `MTOOLS_NAME_NUMERIC_TAIL=1`, `LC_ALL=C` and `TZ=UTC` are set (environment settings take precedence over the system configuration file). Standard input is the null device so mtools never prompts. Handle spawn failure, signal termination, nonzero exit and unexpected results distinctly. Do not depend on localized output for machine interpretation; use a controlled locale and documented machine-friendly output or read the image metadata directly where necessary.
 
 ## 4. Formats and drive compatibility
 
@@ -62,7 +68,7 @@ All initial geometries use 512-byte sectors and FAT12. The registry is the singl
 | `1440k` | 80 | 2 | 18 | 1474560 |
 | `2880k` | 80 | 2 | 36 | 2949120 |
 
-Use format-appropriate media descriptor, BPB, sectors per cluster, reserved sectors, FAT copies and size, and root directory entry count. Verify actual mtools output for each preset against known DOS layouts. The early formats may require special handling for historical DOS versions without conventional BPBs; support for those versions is not implied merely by supporting their image sizes.
+Use format-appropriate media descriptor, BPB, sectors per cluster, reserved sectors, FAT copies and size, and root directory entry count. Verified: with explicit `-t/-h/-s/-c/-r/-m` parameters, mtools 4.0.49 `mformat` produces exactly the conventional DOS layout for every preset (one reserved sector, two FATs; FAT sectors 1, 2, 1, 2, 3, 7, 9, 9 and root entries 64, 64, 112, 112, 112, 224, 224, 240 respectively). Creation verifies the BPB of every image it writes. The early formats may require special handling for historical DOS versions without conventional BPBs; support for those versions is not implied merely by supporting their image sizes.
 
 Automatic selectors choose the smallest compatible format that fits the complete source, not simply any geometry smaller than a byte limit:
 
@@ -112,11 +118,11 @@ Normalize trailing separators and resolve `.` sensibly when deriving basename an
 
 Ignore entries whose names start with `.` at every level, including hidden directories and all descendants. The root `.fdimg.toml` is read only as configuration; nested copies are simply ignored. Do not implicitly read `.gitignore`. Explicit exclusions are applied before name validation, symlink resolution, collision detection and capacity planning. Excluded directories are not traversed.
 
-Use shell-style glob patterns, not regexes, on original source-relative paths with `/` separators. Proposed precise initial semantics: a pattern without `/` matches a basename at any depth; a pattern with `/` matches the whole source-relative path; `*` and `?` do not cross `/`, character classes are supported, and matching is case-sensitive on the host name. `**` recursive path matching may be added later; reject unsupported syntax rather than silently interpret it differently. Document and test the final matcher. Quote CLI patterns to prevent host shell expansion.
+Use shell-style glob patterns, not regexes, on original source-relative paths with `/` separators. Implemented semantics: a pattern without `/` matches a basename at any depth; a pattern with `/` matches the whole source-relative path, and a leading `/` is permitted to anchor a pattern to the source root (`/README.md`); `*` and `?` do not cross `/`; character classes (`[abc]`, `[a-z]`, negated with `!` or `^`) are supported; a backslash makes the next character literal; matching is case-sensitive on the host name. `**`, a trailing `/`, empty patterns and unterminated classes are rejected. `**` recursive path matching may be added later. Quote CLI patterns to prevent host shell expansion.
 
 ### 6.2 Short names
 
-Accept upper, lower and mixed case; normalize to uppercase DOS 8.3. No VFAT long-name entries, generated aliases, truncation, replacement characters or silent sanitization. Validate each directory component: nonempty base of 1–8 characters, optional extension of 1–3 characters, at most one separating dot. Reject invalid ASCII characters, spaces, control characters, trailing dots, path separators and reserved DOS device names (including extensions on CON, PRN, AUX, NUL, COM1–COM9, LPT1–LPT9). Restrict initial encoding to the DOS-compatible ASCII subset; define and test the precise permitted punctuation against DOS and mtools. Do not use locale-dependent Unicode case folding.
+Accept upper, lower and mixed case; normalize to uppercase DOS 8.3. No VFAT long-name entries, generated aliases, truncation, replacement characters or silent sanitization. Validate each directory component: nonempty base of 1–8 characters, optional extension of 1–3 characters, at most one separating dot. Reject invalid ASCII characters, spaces, control characters, trailing dots, path separators and reserved DOS device names (including extensions on CON, PRN, AUX, NUL, COM1–COM9, LPT1–LPT9). Restrict initial encoding to the DOS-compatible ASCII subset. Permitted characters are `A`–`Z`, `0`–`9` and `` ! # $ % & ( ) - @ ^ _ ` { } ~ ``. The apostrophe is legal in DOS but rejected because mtools 4.0.49 turns it into a long-name entry (as it does `+ , ; = [ ]`, which DOS also forbids in short names). `CLOCK$` is also treated as a reserved device name. Do not use locale-dependent Unicode case folding.
 
 Detect collisions per destination directory after normalization, including file/file, directory/directory, file/directory and conflicts with existing entries. Report both source paths and the normalized destination. Different directories may contain the same name. For example `readme.txt` and `README.TXT` in one directory are an error, not overwrite candidates.
 
@@ -128,9 +134,9 @@ Reject directory symlinks, dangling links, cycles, special files and links to sp
 
 ### 6.4 Labels, metadata and capacity
 
-FAT volume labels permit up to 11 characters and have different character rules from 8.3 names; allow embedded spaces where legal. Uppercase and validate labels; no silent truncation or sanitization. Invalid derived labels are errors with suggestions to set `--label`, edit TOML or use `--no-label`. Explicit unlabeled overrides config and derived defaults. Empty images default to unlabeled. Count any root directory volume-label entry in capacity planning.
+FAT volume labels permit up to 11 characters and have different character rules from 8.3 names; the implementation allows the short-name character set plus embedded (not leading or trailing) spaces, and no dot. Uppercase and validate labels; no silent truncation or sanitization. Invalid derived labels are errors with suggestions to set `--label`, edit TOML or use `--no-label`. Explicit unlabeled overrides config and derived defaults. Empty images default to unlabeled. Count any root directory volume-label entry in capacity planning.
 
-Preserve source modification timestamps by default subject to documented FAT range and two-second granularity. For symlinks use the target file timestamp. Do not promise POSIX permissions, ownership or link preservation. Support explicit DOS attributes where needed; define the default attribute mapping and timestamp overflow policy during implementation, without silent loss of file contents.
+Preserve source modification timestamps by default subject to documented FAT range and two-second granularity. For symlinks use the target file timestamp. Do not promise POSIX permissions, ownership or link preservation. Support explicit DOS attributes where needed (milestone 3). Defaults as implemented: files receive the archive attribute only (mtools' default); FAT timestamps are written and read as UTC; times are truncated to the two-second granularity; modification times before 1980-01-01T00:00:00Z or after 2107-12-31T23:59:58Z are clamped to that range (mtools would otherwise wrap them). Each file's time is passed to `mcopy` via a per-invocation `SOURCE_DATE_EPOCH`, which gives the library full control of the stored value.
 
 Capacity planning must include per-file cluster rounding, directories (including dot entries and directory growth), root entry limits, volume label and format-specific reserved/FAT/root overhead. Zero-byte files still consume directory entries. A capacity failure reports which constraint failed, and for automatic selectors reports why each candidate did not fit. Never silently omit an entry or split across disks.
 
@@ -142,7 +148,9 @@ Capacity planning must include per-file cluster rounding, directories (including
 4. Create a temporary image in the destination directory, with the exact expected length and valid FAT12 layout.
 5. Populate it using mtools with explicit destination short names; ensure no long-name entries are created. Avoid accidental host shell or mtools wildcard interpretation.
 6. Verify the image length, geometry, filesystem structure, expected names and file inventory; detect backend truncation, renaming or omission. Verify data as appropriate; independent validators belong in integration tests.
-7. Publish only after success. Without force, fail if destination exists, including a race at publication. With force, replace atomically where supported. Preserve existing image on any earlier failure and clean up temporary files.
+7. Publish only after success. Without force, publish with `link()`, which fails if the destination appeared after the preflight check (on filesystems without hard links, reserve the name with `O_CREAT|O_EXCL` and rename over the reservation). With force, `rename()` replaces atomically. Preserve existing image on any earlier failure and clean up temporary files.
+
+Directories are created (parents first, in manifest order) before files are copied, giving a deterministic directory and allocation order. Verification compares the complete image inventory with the manifest, re-reads every source file to compare contents, and fails if a source file's size or modification time changed during the build.
 
 Reject destination symlinks and nonregular destination objects; never follow an output symlink to overwrite another file. Apply analogous transactional semantics to existing-image mutations via a working copy. Define concurrency guarantees explicitly; concurrent writers are not a supported workflow unless locking is added. Avoid trusting a stale preflight: backend errors or source changes during copying must not produce a silently incomplete image.
 
@@ -267,7 +275,7 @@ Support `fdimg`, `fdimg --help`, `fdimg --version`, `fdimg help create`, and `fd
 
 ## 10. Reproducibility and bootable images
 
-Use deterministic manifest ordering and allocation order where supported. Preserve file modification times normally. Support `SOURCE_DATE_EPOCH` in reproducible mode, including deterministic FAT timestamps and volume serial numbers where possible. Define UTC conversion and behavior for invalid/out-of-range epochs; ensure directory entries and volume metadata are included. Do not claim byte-for-byte reproducibility until independently tested across repeated builds and supported mtools versions. Document remaining backend limitations.
+Use deterministic manifest ordering and allocation order where supported. Preserve file modification times normally. Support `SOURCE_DATE_EPOCH` in reproducible mode, including deterministic FAT timestamps and volume serial numbers where possible. Implemented: the API option `source_date_epoch` (defaulting to the environment variable; explicit `undef` disables it) enables reproducible mode. File timestamps are clamped to the epoch, directory entries and the volume label use it, and the volume serial number is its low 32 bits (passed explicitly with `mformat -N`, because mtools derives the serial from the wall clock). Values that are not non-negative integers, or that fall outside the FAT timestamp range, are errors. Repeated builds with the same epoch are tested to be byte-for-byte identical with a single mtools version; the boot sector OEM name contains the mtools version (for example `MTOO4049`), so images are not identical across mtools versions. Do not claim byte-for-byte reproducibility until independently tested across repeated builds and supported mtools versions. Document remaining backend limitations.
 
 Initial creation makes a formatted data disk, not necessarily a bootable DOS disk. Plan early follow-up support for custom boot code preserving the generated BPB, and optionally complete boot sector replacement only with validated geometry/layout compatibility. Later support DOS-specific system disk installation and required system-file ordering/placement (including GR-DOS). Merely copying system files does not guarantee bootability. Keep these operations distinct from ordinary file copying. Future multi-disk packing is useful but explicitly outside the initial scope.
 
@@ -284,13 +292,24 @@ At least one `.t` file per module: `t/foo_bar_baz.t` for `Foo::Bar::Baz`; when s
 
 ```text
 t/app_fdimg.t
+t/app_fdimg__smoke.t               executable smoke test
 t/disk_diskette.t
-t/disk_diskette_image.t
-t/disk_diskette_format.t
-t/disk_diskette_config.t
-t/disk_diskette_manifest.t
+t/disk_diskette__auto.t            automatic selection and capacity boundaries
+t/disk_diskette__formats.t         every fixed geometry
+t/disk_diskette__reproducible.t
+t/disk_diskette__safety.t
 t/disk_diskette_backend_mtools.t
+t/disk_diskette_config.t
+t/disk_diskette_entry.t
+t/disk_diskette_error.t
+t/disk_diskette_fat12.t
+t/disk_diskette_format.t
+t/disk_diskette_image.t
+t/disk_diskette_manifest.t
+t/disk_diskette_name.t
 ```
+
+Shared helpers live in `t/lib/Test/Diskette.pm`. Tests that need mtools skip with a reason when it is missing, unless `FDIMG_REQUIRE_MTOOLS=1` is set, in which case they bail out; CI sets it. The Linux (cip) workflow installs `mtools` and `dosfstools` via `maint/cip-before-install`; the macOS workflow installs them with Homebrew and runs `prove -lr t`.
 
 Test CLI directly with `Capture::Tiny` around `App::fdimg->main(@args)` and check return status, STDOUT, STDERR, repeated invocation and unchanged caller `@ARGV`. Include an executable smoke test. Keep ordinary `prove -l` development possible; skip optional external integration tests with clear reasons when unavailable, but ensure CI actually installs mtools and exercises the integration suite on Linux and macOS.
 
@@ -310,7 +329,7 @@ Use mtools for interoperability checks and optional `fsck.fat` or another indepe
 ## 12. Implementation milestones
 
 1. **Core creation:** registry, configuration, manifest, strict validation, automatic selection, transactional mtools creation, public API and create/formats/help CLI.
-2. **Read and inspect:** info, ls, extract, validate, completions, complete CLI/API documentation and independent compatibility testing. Milestones 1–2 constitute the intended initial usable release.
+2. **Read and inspect:** info, ls, extract, validate, completions, complete CLI/API documentation and independent compatibility testing. Milestones 1–2 constitute the intended initial usable release. **Status:** milestones 1 and 2 are implemented except testing on emulators and physical hardware.
 3. **Mutation:** add, rm, mkdir, transactional updates and DOS attributes as needed.
 4. **Boot support:** boot code/sector operations and later DOS system installation; investigate GR-DOS integration.
 5. **Further enhancements:** multi-image packing, additional encodings/geometries or native backends only when justified.
@@ -319,4 +338,4 @@ Reproducible build support should be developed alongside creation and verified b
 
 ## 13. Implementation decisions still to verify
 
-The overall architecture and user-facing defaults are settled. The following are implementation-level details, not reasons to defer the project: TOML parser selection; exact historical FAT12 layouts and mtools capabilities (especially 160K/180K/320K and 2.88M); accepted DOS punctuation and timestamp handling; backend output parsing/verification; exclusion matcher details; exact mutation API signatures and options; reproducibility controls. Proposed details in this document should be confirmed with tests before becoming stable public contracts. No backend commands or hardware compatibility tests have yet been executed as part of this design.
+The overall architecture and user-facing defaults are settled. Resolved during the initial implementation (see the sections above): TOML parser selection, FAT12 layouts produced by mtools for every preset, accepted DOS punctuation, timestamp handling, backend verification (native reader), exclusion matcher details and reproducibility controls. Still open: exact mutation API signatures and options (milestone 3); boot-capable images for DOS versions without conventional BPBs (160K/320K); emulator and physical hardware compatibility testing, which has not yet been performed. Images have been checked with mtools and `fsck.fat` only.

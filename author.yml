@@ -5,7 +5,23 @@ pod_spelling_system:
   # (regardless of what spell check thinks)
   # or stuff that I like to spell incorrectly
   # intentionally
-  stopwords: []
+  stopwords:
+    - allocatable
+    - Allocatable
+    - BPB
+    - bpb
+    - bytewise
+    - DEST
+    - FATs
+    - fdimg
+    - FlashFloppy
+    - Gotek
+    - mtools
+    - sanitization
+    - TOML
+    - unterminated
+    - uppercased
+    - VFAT
 
 pod_coverage:
   skip: 0
