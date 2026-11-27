@@ -299,8 +299,12 @@ sub _verify ($class, $tmp, $format, $label, $manifest) {
   push @problems, "backend produced format @{[ $fs->format->name ]}, expected @{[ $format->name ]}"
     unless $fs->format->name eq $format->name;
   push @problems, $fs->check;
-  push @problems, "backend created @{[ $fs->long_name_entries ]} long file name entries"
-    if $fs->long_name_entries;
+  if(my $count = $fs->long_name_entries) {
+    my @names = $fs->long_names;
+    push @problems, "backend created $count long file name entries";
+    push @problems, map { "  $_->[0] has long name '$_->[1]'" } grep { defined } @names[0 .. ($#names < 4 ? $#names : 4)];
+    push @problems, "  ... and @{[ @names - 5 ]} more" if @names > 5;
+  }
 
   my $got_label = $fs->label;
   push @problems, "volume label is '@{[ $got_label // '' ]}', expected '@{[ $label // '' ]}'"

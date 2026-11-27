@@ -211,6 +211,32 @@ sub long_name_entries ($self) {
   return $count;
 }
 
+=head2 long_names
+
+ my @pairs = $fs->long_names;
+
+Each VFAT long name in the tree as C<[$short_path, $long_name]>.  Non-ASCII
+characters are shown as C<\x{XXXX}>.
+
+=cut
+
+sub long_names ($self) {
+  my @pairs;
+  my %seen;
+  my $walk = sub ($cluster, $path) {
+    for my $raw ($self->_raw_dir_entries($cluster)) {
+      next if $raw->{lfn};
+      my $child = $path eq '/' ? "/$raw->{name}" : "$path/$raw->{name}";
+      push @pairs, [ $child, $raw->{long_name} ] if defined $raw->{long_name};
+      if($raw->{attr} & 0x10 && _visible($raw) && $raw->{cluster} && !$seen{$raw->{cluster}}++) {
+        __SUB__->($raw->{cluster}, $child);
+      }
+    }
+  };
+  $walk->(undef, '/');
+  return @pairs;
+}
+
 sub _chain ($self, $start) {
   my $fat = $self->_fat;
   my @chain;
@@ -255,6 +281,7 @@ sub _raw_dir_entries ($self, $cluster) {
   }
 
   my @entries;
+  my @fragments;
   for(my $offset = 0; $offset + 32 <= length $bytes; $offset += 32) {
     my $raw = substr $bytes, $offset, 32;
     my $first = ord $raw;
@@ -264,7 +291,15 @@ sub _raw_dir_entries ($self, $cluster) {
       = unpack 'a11 C C C v v v v v v v V', $raw;
     if(($attr & 0x3F) == 0x0F) {
       push @entries, { lfn => 1, name => q{}, label => q{}, attr => $attr, cluster => 0, size => 0 };
+      # UTF-16LE name fragment; entries are stored last fragment first
+      unshift @fragments, substr($raw, 1, 10) . substr($raw, 14, 12) . substr($raw, 28, 4);
       next;
+    }
+    my $long_name;
+    if(@fragments) {
+      $long_name = join '', map { $_ < 0x80 ? chr : sprintf '\\x{%04X}', $_ } unpack 'v*', join '', @fragments;
+      $long_name =~ s/\x00.*\z//s;
+      @fragments = ();
     }
     substr($name, 0, 1, "\xE5") if $first == 0x05;
     my $base = substr($name, 0, 8) =~ s/ +\z//r;
@@ -279,6 +314,7 @@ sub _raw_dir_entries ($self, $cluster) {
       size     => $size,
       mtime    => _fat_time($wdate, $wtime),
       offset   => $offset,
+      (defined $long_name ? (long_name => $long_name) : ()),
     };
   }
   return @entries;

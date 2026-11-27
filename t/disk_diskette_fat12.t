@@ -144,6 +144,7 @@ subtest 'long file name entries are counted' => sub {
   $backend->run('mcopy', [ '-i', "$img", $src->child('a.txt')->stringify, '::/x+y.txt' ]);
   my $fs = $class->load($img);
   ok $fs->long_name_entries > 0, 'counted';
+  is [ $fs->long_names ], [ [ '/X_Y~1.TXT', 'x+y.txt' ] ], 'long name decoded';
   is [ $fs->check ], [], 'still consistent';
   ok !(grep { $_->name eq '' } $fs->walk), 'not listed';
 };

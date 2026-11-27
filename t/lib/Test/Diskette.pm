@@ -9,7 +9,7 @@ use Capture::Tiny ();
 use Exporter 'import';
 use Disk::Diskette::Backend::Mtools;
 
-our @EXPORT = qw( tmpdir require_mtools make_tree fsck_ok mdir_paths have_program error_like );
+our @EXPORT = qw( tmpdir case_sensitive_fs require_mtools make_tree fsck_ok mdir_paths have_program error_like );
 
 # Skip the current test file unless mtools is available.  In CI set
 # FDIMG_REQUIRE_MTOOLS=1 so that missing mtools is a failure, not a skip.
@@ -32,6 +32,16 @@ sub tmpdir ($name = q{tmp}) {
   my $dir = $tmp->child($name);
   $dir->mkpath;
   return $dir;
+}
+
+# true if the filesystem holding temporary directories distinguishes case
+sub case_sensitive_fs () {
+  state $result = do {
+    my $dir = tmpdir(q{case});
+    $dir->child(q{a})->spew(q{});
+    !-e $dir->child(q{A});
+  };
+  return $result;
 }
 
 sub have_program ($name) {

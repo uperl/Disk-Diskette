@@ -143,13 +143,16 @@ subtest 'operation failures' => sub {
     is $r->{exit}, 0;
     is $r->{out}, "Created blank.img (360K FAT12)\n";
 
-    $src->child('files/readme.txt')->spew('b');
-    $src->child('files/README.TXT')->spew('a');
-    $r = run('create', 'utilities', 'collide.img');
-    is $r->{exit}, 1;
-    like $r->{err}, qr{\Afdimg: DOS filename collision: /FILES/README\.TXT\n  utilities/files/README\.TXT and utilities/files/readme\.txt map to the same name\n\z};
-    $src->child('files/README.TXT')->remove;
-    $src->child('files/readme.txt')->remove;
+    SKIP: {
+      skip 'case-insensitive filesystem cannot hold names differing only by case', 2 unless case_sensitive_fs();
+      $src->child('files/readme.txt')->spew('b');
+      $src->child('files/README.TXT')->spew('a');
+      $r = run('create', 'utilities', 'collide.img');
+      is $r->{exit}, 1;
+      like $r->{err}, qr{\Afdimg: DOS filename collision: /FILES/README\.TXT\n  utilities/files/README\.TXT and utilities/files/readme\.txt map to the same name\n\z};
+      $src->child('files/README.TXT')->remove;
+      $src->child('files/readme.txt')->remove;
+    }
 
     $r = run('create', '-f', '360k', '-l', 'x', 'utilities', 'short.img');
     is $r->{exit}, 0, 'short options';

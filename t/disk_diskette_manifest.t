@@ -72,15 +72,20 @@ subtest 'hidden entries' => sub {
 };
 
 subtest 'names and collisions' => sub {
-  my $src = make_tree(tmpdir('files'),
-    'README.TXT' => 'a',
-    'readme.txt' => 'b',
-  );
-  my $e = error_like { build(source => $src) } qr{DOS filename collision: /README\.TXT};
-  like "$e", qr{files/README\.TXT and .*files/readme\.txt map to the same name}, 'both source paths';
+  my $src;
+  my $e;
+  SKIP: {
+    skip 'case-insensitive filesystem cannot hold names differing only by case', 3 unless case_sensitive_fs();
+    $src = make_tree(tmpdir('files'),
+      'README.TXT' => 'a',
+      'readme.txt' => 'b',
+    );
+    $e = error_like { build(source => $src) } qr{DOS filename collision: /README\.TXT};
+    like "$e", qr{files/README\.TXT and .*files/readme\.txt map to the same name}, 'both source paths';
 
-  $src = make_tree(tmpdir('src'), 'Doc/' => undef, 'doc' => 'x');
-  error_like { build(source => $src) } qr{collision: /DOC}, 'file/directory collision';
+    $src = make_tree(tmpdir('src'), 'Doc/' => undef, 'doc' => 'x');
+    error_like { build(source => $src) } qr{collision: /DOC}, 'file/directory collision';
+  }
 
   $src = make_tree(tmpdir('src'), 'a/x.txt' => 'x', 'b/x.txt' => 'y');
   is [ map { $_->{dos_path} } build(source => $src)->nodes ], [ '/A', '/A/X.TXT', '/B', '/B/X.TXT' ], 'same name in different directories';
